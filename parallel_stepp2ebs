@@ -1,0 +1,136 @@
+#!/bin/ksh
+################################################################################
+# STEPP to EBSO Transfer Script                                                #
+# Function: 1 - Copy STDF to EBSO Logicload input directory                    #
+#           2 - Touch the corresponding FTC file                               #
+#           3 - Move STDF to the next directory for EBSA transfer              #
+#                                                                              #
+################################################################################
+
+################################################################################
+#  Script Configuration                                                        #
+################################################################################
+
+#### Env configuration ####
+BASE=`basename $0`
+TS=`date +%b%d%Y`
+PRG_PATH="$HOME/software/ifxSWVersions/admin/scripts/parallel_stepp2ebs"
+LCKFIL="$PRG_PATH/.$BASE.PID"
+LOAD_LIMIT="150"
+
+#### Source server configuration ####
+#PCMSRCDIR="$HOME/data/TRANSFER_EBS/test"
+#SRCDIR="$HOME/data/OpenFT/TRANSFER_EBS/test"
+#BESRCDIR="$HOME/data/TRANSFER_EBS/test3"
+
+SRCDIR="$HOME/data/OpenFT/TRANSFER_EBS/in/done/"
+
+DONEDIR="$HOME/data/OpenFT/TRANSFER_EBS/in/doneLinux/"
+
+#### Destination server configuration ####
+DEST_SERVER="XXXX"
+DEST_USER="ebsdba"
+DEST_DIR="/srv/ebsdba/ebsdba/data/KLM/logicload/input/STDF4"
+
+#### Log configuration ####
+mkdir -p $PRG_PATH/logs >/dev/null 2>&1
+LOGFILE="$PRG_PATH/logs/${BASE}_${TS}.log"
+
+File_transfer (){
+        for file in `ls -rtcl S_* | head -${LOAD_LIMIT} | awk '{print $9}'`
+        do
+
+                        #### Ensure STDF is not in use by other process ####
+
+                        HPS1=`ls -l ${file} | awk '{print $5}'`
+                        sleep 1
+                        HPS2=`ls -l ${file} | awk '{print $5}'`
+
+                        if [ "${HPS1}" != "${HPS2}" ]; then
+                                        echo "File size changed. Skipped" | tee -a $LOGFILE
+                                        exit 10
+                        fi
+
+                        NOW=$(date +"%D %T")
+                        echo "$NOW : $file - Transferring to EBS"
+                        scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $file $DEST_USER@$DEST_SERVER:$DEST_DIR 2>&1
+                        ssh -l $DEST_USER -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes $DEST_SERVER "gunzip $DEST_DIR/$file" 2>&1
+                        file1=$(echo "$file" | sed 's/.gz//g')
+                        ssh -l $DEST_USER -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes $DEST_SERVER "touch $DEST_DIR/$file1.FTC" 2>&1
+                        RCode=$?
+
+                           #### Check status of passwordless access ####
+                        if [ $RCode != 0 ]; then
+                                        NOW=$(date +"%D %T")
+                                        echo "$NOW : $file - Fail to transfer $file" | tee -a ${LOGFILE}
+                                        echo "ERROR - Exiting now" | tee -a ${LOGFILE}
+                                        exit 10
+                        fi
+
+                                        echo "$NOW : $file - Transfer complete" | tee -a ${LOGFILE}
+                                        mv $file $DONEDIR 2>&1 | tee -a ${LOGFILE}
+
+        done
+}
+
+################################################################################
+#  Single Process Check                                                        #
+################################################################################
+
+if [ -s $LCKFIL ]; then
+        pid=`cat $LCKFIL`
+        ps -fp ${pid}|grep ${BASE}
+
+        if [ $? -eq 0 ]; then
+                echo "Another job is running now!"
+                echo `ps -fp ${pid}|grep ${BASE}`
+                exit 10
+        fi
+fi
+
+echo $$ > $LCKFIL
+
+
+################################################################################
+#  Secure Access Check                                                         #
+################################################################################
+
+ssh -l $DEST_USER -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes $DEST_SERVER "date" 2>&1
+RCode=$?
+
+if [ $RCode == 0 ]
+then
+        continue
+else
+        NOW=$(date +"%D %T")
+        echo "ERROR - $NOW Startup failed." >> ${LOGFILE}
+        echo "ERROR - $NOW Unable to establish a secure access to destination. Return code $RCode" >> ${LOGFILE}
+        exit 10
+fi
+
+
+################################################################################
+#  Main Function                                                               #
+################################################################################
+
+#### Check to ensure directories are available ####
+
+if [ ! -d $SRCDIR ]; then
+        NOW=$(date +"%D %T")
+        echo "$NOW $SRCDIR does not exist!" >> ${LOGFILE}
+        exit 10
+fi
+
+if [ ! -d $DONEDIR ]; then
+        NOW=$(date +"%D %T")
+        echo "$NOW $DONEDIR does not exist!" >> ${LOGFILE}
+        exit 10
+fi
+
+#### File transfer function ####
+
+cd $SRCDIR
+File_transfer
+
+rm -f $LCKFIL
+
