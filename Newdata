@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+import os
+import shutil
+
+def find_matching_folders(source_dir: str, keywords: list[str]) -> tuple[list[str], list[str]]:
+    """
+    Find folders whose names contain any keyword (case-insensitive).
+    Returns (found_paths, missing_keywords)
+    """
+    keywords_l = [k.strip().lower() for k in keywords if k.strip()]
+    found = []
+    found_set = set()
+
+    # Track which keywords matched at least one folder
+    matched_keywords = {k: False for k in keywords_l}
+
+    for root, dirs, _ in os.walk(source_dir):
+        for d in dirs:
+            dl = d.lower()
+            for k in keywords_l:
+                if k in dl:
+                    matched_keywords[k] = True
+                    full_path = os.path.realpath(os.path.join(root, d))
+                    if full_path not in found_set:
+                        found.append(full_path)
+                        found_set.add(full_path)
+                    break
+
+    missing = [k for k, ok in matched_keywords.items() if not ok]
+    return found, missing
+
+
+def is_subpath(child: str, parent: str) -> bool:
+    child = os.path.realpath(child)
+    parent = os.path.realpath(parent)
+    try:
+        return os.path.commonpath([child, parent]) == parent
+    except ValueError:
+        return False
+
+
+def move_folders(found_paths: list[str], destination_dir: str) -> None:
+    os.makedirs(destination_dir, exist_ok=True)
+    dest_real = os.path.realpath(destination_dir)
+
+    for src in found_paths:
+        src_real = os.path.realpath(src)
+
+        # Safety: don't move destination into itself / don't move a parent into its child
+        if is_subpath(dest_real, src_real):
+            print(f"SKIP (destination is inside source folder): {src_real}")
+            continue
+
+        folder_name = os.path.basename(src_real.rstrip(os.sep))
+        dest_path = os.path.join(dest_real, folder_name)
+
+        # If target exists, add suffix to avoid overwrite
+        final_dest = dest_path
+        i = 1
+        while os.path.exists(final_dest):
+            final_dest = f"{dest_path}__moved_{i}"
+            i += 1
+
+        print(f"Moving:\n  FROM: {src_real}\n  TO:   {final_dest}\n")
+        shutil.move(src_real, final_dest)
+
+    print("✅ Move completed.")
+
+
+def main():
+    source = input("Enter SOURCE folder path: ").strip()
+    destination = input("Enter DESTINATION folder path: ").strip()
+    keywords_input = input("Enter folder keywords (comma separated, e.g. a,b or FolderB,FolderE): ").strip()
+
+    if not source or not destination or not keywords_input:
+        print("❌ Missing input.")
+        return
+
+    source = os.path.realpath(os.path.expanduser(source))
+    destination = os.path.realpath(os.path.expanduser(destination))
+
+    if not os.path.isdir(source):
+        print(f"❌ SOURCE not found or not a directory: {source}")
+        return
+
+    keywords = [x.strip() for x in keywords_input.split(",") if x.strip()]
+
+    found_paths, missing_keywords = find_matching_folders(source, keywords)
+
+    print("\n===== FOUND FOLDERS (preview) =====")
+    if found_paths:
+        for i, p in enumerate(found_paths, 1):
+            print(f"{i}. {p}")
+    else:
+        print("None")
+
+    print("\n===== KEYWORDS WITH NO MATCH =====")
+    if missing_keywords:
+        for k in missing_keywords:
+            print(f"- {k}")
+    else:
+        print("None")
+
+    if not found_paths:
+        print("\nNothing to move.")
+        return
+
+    confirm = input("\nMove these folders now? (yes/no): ").strip().lower()
+    if confirm in ("y", "yes"):
+        move_folders(found_paths, destination)
+    else:
+        print("❌ Cancelled.")
+
+
+if __name__ == "__main__":
+    main()
