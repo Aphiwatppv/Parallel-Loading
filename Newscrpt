@@ -1,0 +1,84 @@
+import os
+import shutil
+
+
+def find_folders(source_dir, folder_names):
+    found_paths = []
+    not_found = []
+
+    for name in folder_names:
+        found = False
+
+        for root, dirs, files in os.walk(source_dir):
+            if name in dirs:
+                full_path = os.path.join(root, name)
+                found_paths.append(full_path)
+                found = True
+                break
+
+        if not found:
+            not_found.append(name)
+
+    return found_paths, not_found
+
+
+def move_folders(found_paths, destination_dir):
+
+    if not os.path.exists(destination_dir):
+        os.makedirs(destination_dir)
+
+    for path in found_paths:
+
+        folder_name = os.path.basename(path)
+        dest = os.path.join(destination_dir, folder_name)
+
+        print(f"Moving: {path}")
+        shutil.move(path, dest)
+
+    print("\n✅ Move completed.")
+
+
+# ===== MAIN =====
+
+source = input("Enter SOURCE folder: ").strip()
+destination = input("Enter DESTINATION folder: ").strip()
+
+names_input = input("Enter folder names (comma separated): ")
+folder_names = [x.strip() for x in names_input.split(",")]
+
+
+# STEP 1: FIND
+found_paths, not_found = find_folders(source, folder_names)
+
+
+# STEP 2: SHOW LIST
+
+print("\n===== FOUND FOLDERS =====")
+
+if found_paths:
+    for i, path in enumerate(found_paths, 1):
+        print(f"{i}. {path}")
+else:
+    print("None")
+
+
+print("\n===== NOT FOUND =====")
+
+if not_found:
+    for name in not_found:
+        print(name)
+else:
+    print("None")
+
+
+# STEP 3: CONFIRM
+
+confirm = input("\nDo you want to move these folders? (yes/no): ").lower()
+
+
+# STEP 4: MOVE
+
+if confirm == "yes":
+    move_folders(found_paths, destination)
+else:
+    print("❌ Cancelled.")
