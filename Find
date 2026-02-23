@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# ----------------------------
+#  Find Tool (Filename/Content)
+# ----------------------------
+
+ask_dir() {
+  read -rp "Enter directory to search: " SEARCH_DIR
+  if [ ! -d "$SEARCH_DIR" ]; then
+    echo "❌ Directory not found: $SEARCH_DIR"
+    return 1
+  fi
+  return 0
+}
+
+ask_keyword() {
+  read -rp "Enter keyword: " KEYWORD
+  if [ -z "$KEYWORD" ]; then
+    echo "❌ Keyword cannot be empty."
+    return 1
+  fi
+  return 0
+}
+
+ask_extension_optional() {
+  read -rp "Filter by extension? (e.g. log, txt) [Enter to skip]: " EXT
+  EXT="${EXT#.}"   # remove leading dot if user types ".log"
+}
+
+find_by_filename() {
+  echo ""
+  echo "========== 🔎 Filename match =========="
+  if [ -n "$EXT" ]; then
+    find "$SEARCH_DIR" -type f -name "*$KEYWORD*" -name "*.$EXT" 2>/dev/null
+  else
+    find "$SEARCH_DIR" -type f -name "*$KEYWORD*" 2>/dev/null
+  fi
+}
+
+find_in_content() {
+  echo ""
+  echo "========== 🧾 Content match =========="
+  if [ -n "$EXT" ]; then
+    grep -rnH --color=always --include="*.$EXT" "$KEYWORD" "$SEARCH_DIR" 2>/dev/null
+  else
+    grep -rnH --color=always "$KEYWORD" "$SEARCH_DIR" 2>/dev/null
+  fi
+}
+
+while true; do
+  echo ""
+  echo "=============================="
+  echo " Find Tool Menu"
+  echo "=============================="
+  echo "1) Find by filename"
+  echo "2) Search inside file content"
+  echo "3) Both filename + content"
+  echo "4) Exit"
+  echo "------------------------------"
+  read -rp "Select option (1-4): " CHOICE
+
+  case "$CHOICE" in
+    1)
+      ask_dir || continue
+      ask_keyword || continue
+      ask_extension_optional
+      find_by_filename
+      ;;
+    2)
+      ask_dir || continue
+      ask_keyword || continue
+      ask_extension_optional
+      find_in_content
+      ;;
+    3)
+      ask_dir || continue
+      ask_keyword || continue
+      ask_extension_optional
+      find_by_filename
+      find_in_content
+      ;;
+    4)
+      echo "Bye 👋"
+      exit 0
+      ;;
+    *)
+      echo "❌ Invalid option. Please select 1-4."
+      ;;
+  esac
+done
